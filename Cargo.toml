@@ -1,0 +1,14 @@
+[package]
+name = "gitfetch"
+version = "0.10.0"
+edition = "2021"
+authors = ["An Insufferable Prick"]
+description = "A GitHub Package Manager from Hell - glorified git clone with delusions of grandeur"
+
+[dependencies]
+clap = { version = "4.5", features = ["derive"] }
+clap_complete = "4.5"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+reqwest = { version = "0.11", features = ["blocking", "json"] }
+urlencoding = "2.1"

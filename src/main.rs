@@ -1,0 +1,333 @@
+use clap::{Parser, Subcommand, CommandFactory, ValueHint};
+use clap_complete::{generate, Shell};
+use serde::{Deserialize, Serialize};
+use std::fs;
+use std::io;
+use std::path::PathBuf;
+use std::process::{Command, Stdio};
+
+#[derive(Parser)]
+#[command(name = "gitfetch")]
+#[command(about = "A GitHub Package Manager from Hell", long_about = None)]
+#[command(version = "0.10")]
+struct Cli {
+    #[command(subcommand)]
+    command: Commands,
+}
+
+#[derive(Subcommand)]
+enum Commands {
+    /// Clone a repository and pretend you're clever (glorified git clone)
+    #[command(short_flag = 'c', visible_alias = "clone")]
+    Clone {
+        /// Repository URL (e.g., https://github.com/user/repo)
+        #[arg(value_hint = ValueHint::Url)]
+        repo: String,
+    },
+    /// List all the repos you've installed with this nonsense
+    #[command(short_flag = 'l', visible_alias = "list")]
+    List,
+    /// Search for repositories by name (because apparently you can't use GitHub's website)
+    #[command(short_flag = 's', visible_alias = "search")]
+    Search {
+        /// Repository name to search for (e.g., dreammaomao/mangowc)
+        query: String,
+    },
+    /// Print something utterly pointless
+    #[command(short_flag = 'e', visible_alias = "easter-egg")]
+    EasterEgg,
+    /// Generate shell completion scripts (saves you from rc injection hell)
+    Completions {
+        /// Shell to generate completions for
+        #[arg(value_enum)]
+        shell: Shell,
+    },
+    /// Internal command for completion suggestions (don't use this manually)
+    #[command(hide = true)]
+    Complete {
+        /// What we're completing (repos, clone-targets, etc)
+        completion_type: String,
+        /// Current partial input
+        #[arg(default_value = "")]
+        partial: String,
+    },
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+struct GitFetchConfig {
+    installed_repos: Vec<InstalledRepo>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+struct InstalledRepo {
+    name: String,
+    url: String,
+    path: String,
+}
+
+impl GitFetchConfig {
+    fn load() -> Self {
+        let config_path = Self::config_path();
+        if config_path.exists() {
+            let contents = fs::read_to_string(&config_path)
+                .expect("Bloody hell, can't read the config file");
+            serde_json::from_str(&contents).unwrap_or_else(|_| GitFetchConfig {
+                installed_repos: vec![],
+            })
+        } else {
+            GitFetchConfig {
+                installed_repos: vec![],
+            }
+        }
+    }
+
+    fn save(&self) {
+        let config_path = Self::config_path();
+        if let Some(parent) = config_path.parent() {
+            fs::create_dir_all(parent).expect("Can't create config directory, brilliant");
+        }
+        let contents = serde_json::to_string_pretty(self)
+            .expect("Failed to serialize config, absolutely fantastic");
+        fs::write(&config_path, contents).expect("Can't write config file, lovely");
+    }
+
+    fn config_path() -> PathBuf {
+        let home = std::env::var("HOME").expect("No HOME directory? What are you running this on, a toaster?");
+        PathBuf::from(home).join(".config").join("gitfetch").join("config.json")
+    }
+
+    fn add_repo(&mut self, name: String, url: String, path: String) {
+        self.installed_repos.push(InstalledRepo { name, url, path });
+        self.save();
+    }
+}
+
+#[derive(Deserialize, Debug)]
+struct GitHubRepo {
+    full_name: String,
+    html_url: String,
+    description: Option<String>,
+    stargazers_count: u32,
+    watchers_count: u32,
+}
+
+#[derive(Deserialize, Debug)]
+struct GitHubSearchResponse {
+    items: Vec<GitHubRepo>,
+}
+
+fn clone_repo(repo: &str) {
+    println!("Right then, cloning {}... because apparently `git clone` was too difficult for you", repo);
+    
+    let repo_url = if repo.starts_with("http://") || repo.starts_with("https://") {
+        repo.to_string()
+    } else if repo.contains('/') {
+        format!("https://github.com/{}", repo)
+    } else {
+        eprintln!("What sort of dodgy input is this? Provide a proper repo URL or user/repo format");
+        std::process::exit(1);
+    };
+
+    let repo_name = repo_url
+        .trim_end_matches(".git")
+        .split('/')
+        .last()
+        .expect("Can't parse repo name, bloody brilliant")
+        .to_string();
+
+    let status = Command::new("git")
+        .args(&["clone", &repo_url])
+        .status()
+        .expect("Failed to execute git. Do you even have git installed?");
+
+    if !status.success() {
+        eprintln!("Git clone failed. Shocking, absolutely shocking.");
+        std::process::exit(1);
+    }
+
+    let mut config = GitFetchConfig::load();
+    let repo_path = std::env::current_dir()
+        .expect("Can't get current directory")
+        .join(&repo_name)
+        .to_string_lossy()
+        .to_string();
+    
+    config.add_repo(repo_name.clone(), repo_url.clone(), repo_path.clone());
+
+    println!("Successfully cloned to: {}", repo_path);
+    println!("\nNow cd into it yourself, this isn't a bloody taxi service.");
+    println!("  cd {}", repo_name);
+}
+
+fn list_repos() {
+    let config = GitFetchConfig::load();
+    
+    if config.installed_repos.is_empty() {
+        println!("You haven't installed bugger all with gitfetch yet.");
+        return;
+    }
+
+    println!("Repositories you've installed with this rubbish:");
+    println!();
+    for repo in &config.installed_repos {
+        println!("  • {} ", repo.name);
+        println!("    URL: {}", repo.url);
+        println!("    Path: {}", repo.path);
+        println!();
+    }
+}
+
+fn search_repos(query: &str) {
+    println!("Searching for '{}'... because the GitHub website was clearly too mainstream for you", query);
+    
+    // Search in repository name specifically, not description
+    let search_query = if query.contains('/') {
+        // If it looks like user/repo, search for exact repo name
+        format!("repo:{}", query)
+    } else {
+        // Otherwise search in repository names
+        format!("{} in:name", query)
+    };
+    
+    let url = format!(
+        "https://api.github.com/search/repositories?q={}&sort=stars&order=desc",
+        urlencoding::encode(&search_query)
+    );
+
+    let client = reqwest::blocking::Client::builder()
+        .user_agent("gitfetch/0.10 (insufferable-prick-edition)")
+        .build()
+        .expect("Can't create HTTP client");
+
+    let response = client
+        .get(&url)
+        .send();
+
+    match response {
+        Ok(resp) => {
+            if resp.status().is_success() {
+                let search_result: Result<GitHubSearchResponse, _> = resp.json();
+                match search_result {
+                    Ok(result) => {
+                        if result.items.is_empty() {
+                            println!("Found precisely nothing. Remarkable.");
+                        } else {
+                            println!("\nFound {} repositories (showing top results):\n", result.items.len());
+                            for repo in result.items.iter().take(10) {
+                                println!("  {} ", repo.full_name);
+                                println!("    ⭐ Stars: {} | 👀 Watchers: {}", 
+                                    repo.stargazers_count, repo.watchers_count);
+                                if let Some(desc) = &repo.description {
+                                    println!("    {}", desc);
+                                }
+                                println!("    {}", repo.html_url);
+                                println!();
+                            }
+                        }
+                    }
+                    Err(e) => eprintln!("Failed to parse GitHub's response: {}. Typical.", e),
+                }
+            } else {
+                eprintln!("GitHub API returned status {}. Lovely.", resp.status());
+            }
+        }
+        Err(e) => {
+            eprintln!("Network request failed: {}. Check your internet connection, you muppet.", e);
+        }
+    }
+}
+
+fn easter_egg() {
+    let output = Command::new("whoami")
+        .stdout(Stdio::piped())
+        .output()
+        .expect("Failed to run whoami. What operating system is this?");
+
+    let username = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    println!("{} is based", username);
+}
+
+fn generate_completions(shell: Shell) {
+    let completion_script = match shell {
+        Shell::Bash => include_str!("../gitfetch.bash"),
+        Shell::Zsh => include_str!("../gitfetch.zsh"),
+        Shell::Fish => include_str!("../gitfetch.fish"),
+        _ => {
+            eprintln!("Bloody hell, {} isn't supported with custom completions yet.", shell);
+            eprintln!("Falling back to basic static completions...");
+            let mut cmd = Cli::command();
+            generate(shell, &mut cmd, "gitfetch", &mut io::stdout());
+            eprintln!();
+            eprintln!("Note: These are basic completions without intelligent suggestions.");
+            return;
+        }
+    };
+    
+    print!("{}", completion_script);
+    
+    eprintln!();
+    eprintln!("Save the output to the appropriate location for your shell:");
+    match shell {
+        Shell::Bash => {
+            eprintln!("  gitfetch completions bash | sudo tee /etc/bash_completion.d/gitfetch");
+            eprintln!("  # Or for user-only:");
+            eprintln!("  gitfetch completions bash > ~/.local/share/bash-completion/completions/gitfetch");
+        },
+        Shell::Zsh => {
+            eprintln!("  gitfetch completions zsh | sudo tee /usr/local/share/zsh/site-functions/_gitfetch");
+            eprintln!("  # Or for user-only:");
+            eprintln!("  gitfetch completions zsh > ~/.zsh/completions/_gitfetch");
+            eprintln!("  # (Add 'fpath=(~/.zsh/completions $fpath)' before 'compinit' in .zshrc)");
+        },
+        Shell::Fish => {
+            eprintln!("  gitfetch completions fish > ~/.config/fish/completions/gitfetch.fish");
+        },
+        _ => {}
+    }
+}
+
+fn complete_suggestions(completion_type: &str, partial: &str) {
+    match completion_type {
+        "repos" => {
+            // Suggest installed repos for operations that work on them
+            let config = GitFetchConfig::load();
+            for repo in &config.installed_repos {
+                if repo.name.starts_with(partial) || partial.is_empty() {
+                    println!("{}", repo.name);
+                }
+            }
+        }
+        "clone-targets" => {
+            // For clone operations, suggest installed repos as a starting point
+            // (users can still type any URL/repo)
+            let config = GitFetchConfig::load();
+            for repo in &config.installed_repos {
+                if repo.url.contains(partial) || repo.name.contains(partial) || partial.is_empty() {
+                    // Suggest the short form if it's a github repo
+                    if repo.url.contains("github.com") {
+                        if let Some(path) = repo.url.strip_prefix("https://github.com/") {
+                            let short = path.trim_end_matches(".git");
+                            if short.contains(partial) || partial.is_empty() {
+                                println!("{}", short);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
+fn main() {
+    let cli = Cli::parse();
+
+    match cli.command {
+        Commands::Clone { repo } => clone_repo(&repo),
+        Commands::List => list_repos(),
+        Commands::Search { query } => search_repos(&query),
+        Commands::EasterEgg => easter_egg(),
+        Commands::Completions { shell } => generate_completions(shell),
+        Commands::Complete { completion_type, partial } => complete_suggestions(&completion_type, &partial),
+    }
+}
