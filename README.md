@@ -17,7 +17,7 @@ First, use git clone https://github.com/kantiankant/gitfetch.git to clone the re
 1.3: Roadmap/To-Add
 
 * Support for sh
-* gpg and ssh checks
-* General security improvements for gitfetch.
+* General security improvements for gitfetch ✅
+
 
 This was inspired by a friend's project, go check his stuff out at: NyAncQt/ghpm

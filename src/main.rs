@@ -117,8 +117,6 @@ struct GitHubSearchResponse {
 }
 
 fn clone_repo(repo: &str) {
-    println!("Right then, cloning {}... because apparently `git clone` was too difficult for you", repo);
-    
     let repo_url = if repo.starts_with("http://") || repo.starts_with("https://") {
         repo.to_string()
     } else if repo.contains('/') {
@@ -135,6 +133,27 @@ fn clone_repo(repo: &str) {
         .expect("Can't parse repo name, bloody brilliant")
         .to_string();
 
+    // Security theatre: confirmation prompt
+    println!("\n{}", "=".repeat(60));
+    println!("You're about to clone: {}", repo_url);
+    println!("{}", "=".repeat(60));
+    println!("\nWARNING: Only clone repositories from sources you trust.");
+    println!("Malicious code can compromise your system.");
+    println!("\nDo you want to proceed? (yes/no)");
+    print!("> ");
+    io::Write::flush(&mut io::stdout()).expect("Failed to flush stdout");
+    
+    let mut response = String::new();
+    io::stdin().read_line(&mut response).expect("Failed to read input");
+    let response = response.trim().to_lowercase();
+    
+    if response != "yes" && response != "y" {
+        println!("Clone cancelled. Probably for the best, really.");
+        std::process::exit(0);
+    }
+
+    println!("\nRight then, cloning {}... because apparently `git clone` was too difficult for you", repo);
+    
     let status = Command::new("git")
         .args(&["clone", &repo_url])
         .status()
@@ -152,9 +171,42 @@ fn clone_repo(repo: &str) {
         .to_string_lossy()
         .to_string();
     
+    // Run basic static analysis (security theatre continues)
+    println!("\nRunning basic security scan...");
+    let warnings = scan_for_suspicious_patterns(&repo_path);
+    
+    if !warnings.is_empty() {
+        println!("\n{}", "!".repeat(60));
+        println!("SECURITY WARNINGS DETECTED:");
+        println!("{}", "!".repeat(60));
+        for warning in &warnings {
+            println!("  ⚠  {}", warning);
+        }
+        println!("{}", "!".repeat(60));
+        println!("\nThese patterns might indicate malicious code.");
+        println!("Review the code carefully before running anything.");
+        println!("\nProceed anyway? (yes/no)");
+        print!("> ");
+        io::Write::flush(&mut io::stdout()).expect("Failed to flush stdout");
+        
+        let mut response = String::new();
+        io::stdin().read_line(&mut response).expect("Failed to read input");
+        let response = response.trim().to_lowercase();
+        
+        if response != "yes" && response != "y" {
+            println!("\nWise choice. Removing cloned repository...");
+            let _ = std::fs::remove_dir_all(&repo_path);
+            std::process::exit(0);
+        }
+        
+        println!("\nOn your head be it then.");
+    } else {
+        println!("No obvious red flags detected (doesn't mean it's safe, mind you).");
+    }
+    
     config.add_repo(repo_name.clone(), repo_url.clone(), repo_path.clone());
 
-    println!("Successfully cloned to: {}", repo_path);
+    println!("\nSuccessfully cloned to: {}", repo_path);
     println!("\nNow cd into it yourself, this isn't a bloody taxi service.");
     println!("  cd {}", repo_name);
 }
@@ -317,6 +369,114 @@ fn complete_suggestions(completion_type: &str, partial: &str) {
         }
         _ => {}
     }
+}
+
+fn scan_for_suspicious_patterns(repo_path: &str) -> Vec<String> {
+    let mut warnings = Vec::new();
+    let path = std::path::Path::new(repo_path);
+    
+    if !path.exists() {
+        return warnings;
+    }
+    
+    // Scan files for suspicious patterns (this is incredibly naive but better than nothing)
+    let suspicious_patterns = vec![
+        ("eval(", "Use of eval() - can execute arbitrary code"),
+        ("exec(", "Use of exec() - can execute system commands"),
+        ("__import__", "Dynamic imports detected"),
+        ("subprocess.call", "System command execution detected"),
+        ("subprocess.run", "System command execution detected"),
+        ("os.system", "Direct system command execution"),
+        ("shell=True", "Shell command with shell=True (dangerous)"),
+        ("/etc/passwd", "Accessing password file"),
+        ("/etc/shadow", "Accessing shadow file"),
+        ("rm -rf", "Recursive file deletion command"),
+        ("curl", "Network request detected"),
+        ("wget", "Network request detected"),
+        ("base64.b64decode", "Base64 decoding (often used to hide code)"),
+        ("chmod +x", "Making files executable"),
+        (".bash_profile", "Modifying shell profile"),
+        (".bashrc", "Modifying shell config"),
+        (".zshrc", "Modifying shell config"),
+        ("authorized_keys", "Accessing SSH keys"),
+        ("id_rsa", "Accessing SSH private key"),
+        ("bitcoin", "Cryptocurrency-related code"),
+        ("crypto mining", "Potential cryptominer"),
+        ("keylogger", "Keylogger detected"),
+        ("reverse shell", "Reverse shell detected"),
+        ("backdoor", "Backdoor keyword found"),
+    ];
+    
+    let extensions_to_scan = vec![
+        "py", "js", "sh", "bash", "zsh", "rb", "pl", "php", 
+        "rs", "go", "java", "c", "cpp", "h", "hpp"
+    ];
+    
+    // Walk the directory tree (limit depth to avoid scanning forever)
+    if let Ok(entries) = std::fs::read_dir(path) {
+        for entry in entries.flatten() {
+            let entry_path = entry.path();
+            
+            // Skip hidden files and common directories
+            if let Some(name) = entry_path.file_name() {
+                let name_str = name.to_string_lossy();
+                if name_str.starts_with('.') || name_str == "node_modules" || name_str == "target" {
+                    continue;
+                }
+            }
+            
+            if entry_path.is_file() {
+                if let Some(ext) = entry_path.extension() {
+                    let ext_str = ext.to_string_lossy().to_lowercase();
+                    if extensions_to_scan.contains(&ext_str.as_str()) {
+                        // Scan this file
+                        if let Ok(content) = std::fs::read_to_string(&entry_path) {
+                            let content_lower = content.to_lowercase();
+                            for (pattern, description) in &suspicious_patterns {
+                                if content_lower.contains(&pattern.to_lowercase()) {
+                                    let filename = entry_path.file_name()
+                                        .unwrap_or_default()
+                                        .to_string_lossy();
+                                    warnings.push(format!("{}: {}", filename, description));
+                                }
+                            }
+                        }
+                    }
+                }
+            } else if entry_path.is_dir() {
+                // Recursively scan subdirectories (one level only to avoid performance hell)
+                if let Ok(sub_entries) = std::fs::read_dir(&entry_path) {
+                    for sub_entry in sub_entries.flatten() {
+                        let sub_path = sub_entry.path();
+                        if sub_path.is_file() {
+                            if let Some(ext) = sub_path.extension() {
+                                let ext_str = ext.to_string_lossy().to_lowercase();
+                                if extensions_to_scan.contains(&ext_str.as_str()) {
+                                    if let Ok(content) = std::fs::read_to_string(&sub_path) {
+                                        let content_lower = content.to_lowercase();
+                                        for (pattern, description) in &suspicious_patterns {
+                                            if content_lower.contains(&pattern.to_lowercase()) {
+                                                let filename = sub_path.file_name()
+                                                    .unwrap_or_default()
+                                                    .to_string_lossy();
+                                                warnings.push(format!("{}: {}", filename, description));
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    // Deduplicate warnings
+    warnings.sort();
+    warnings.dedup();
+    
+    warnings
 }
 
 fn main() {
