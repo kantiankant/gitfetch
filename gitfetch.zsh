@@ -21,6 +21,9 @@ _gitfetch() {
                 'easter-egg[Print something utterly pointless]' \
                 '-e[Easter egg (short form)]' \
                 'completions[Generate shell completion scripts]' \
+                'checksum[Calculate checksums for a cloned repository]' \
+                'verify[Verify repository integrity against saved checksums]' \
+                'help[Print help message]' \
                 '-h[Show help]' \
                 '--help[Show help]' \
                 '-V[Show version]' \
@@ -38,9 +41,23 @@ _gitfetch() {
                         # Fallback to allowing any input
                         _message 'repository URL or user/repo'
                     fi
+                    # Also suggest flags
+                    _arguments \
+                        '--verify-checksum[Verify against known checksums]' \
+                        '-v[Verify against known checksums]'
                     ;;
                 search|-s)
                     _message 'repository name to search'
+                    ;;
+                checksum)
+                    _arguments \
+                        '1:repository path:_files -/' \
+                        '--save[Save checksum to registry]' \
+                        '-s[Save checksum to registry]'
+                    ;;
+                verify)
+                    _arguments \
+                        '1:repository path:_files -/'
                     ;;
                 completions)
                     _values 'shell' \
@@ -50,7 +67,7 @@ _gitfetch() {
                         'powershell[PowerShell completion]' \
                         'elvish[Elvish completion]'
                     ;;
-                list|-l|easter-egg|-e)
+                list|-l|easter-egg|-e|help)
                     # These take no arguments
                     ;;
             esac
