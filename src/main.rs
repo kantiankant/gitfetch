@@ -1095,7 +1095,7 @@ fn scan_for_suspicious_patterns(repo_path: &str) -> Vec<String> {
         }
     }
     
-    // Deduplicate warnings
+    // Deduplicate warning thingy
     warnings.sort();
     warnings.dedup();
     
