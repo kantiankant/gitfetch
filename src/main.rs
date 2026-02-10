@@ -11,7 +11,7 @@ use std::process::{Command, Stdio};
 #[derive(Parser)]
 #[command(name = "gitfetch")]
 #[command(about = "A GitHub Package Manager from Hell", long_about = None)]
-#[command(version = "0.14")]
+#[command(version = "0.15")]
 struct Cli {
     #[command(subcommand)]
     command: Option<Commands>,
@@ -583,7 +583,7 @@ fn search_repos(query: &str) {
     );
 
     let client = reqwest::blocking::Client::builder()
-        .user_agent("gitfetch/0.14 (insufferable-prick-edition)")
+        .user_agent("gitfetch/0.15")
         .build()
         .expect("Can't create HTTP client");
 
@@ -593,7 +593,41 @@ fn search_repos(query: &str) {
 
     match response {
         Ok(resp) => {
-            if resp.status().is_success() {
+            let status = resp.status();
+            
+            // Check for rate limiting before anything else
+            if status == reqwest::StatusCode::FORBIDDEN || status == reqwest::StatusCode::TOO_MANY_REQUESTS {
+                eprintln!("GitHub's slapped you with a rate limit. Brilliant.");
+                
+                // Try to get rate limit reset time from headers
+                if let Some(reset_time) = resp.headers().get("x-ratelimit-reset") {
+                    if let Ok(reset_str) = reset_time.to_str() {
+                        if let Ok(reset_timestamp) = reset_str.parse::<i64>() {
+                            let now = std::time::SystemTime::now()
+                                .duration_since(std::time::UNIX_EPOCH)
+                                .unwrap()
+                                .as_secs() as i64;
+                            let wait_seconds = reset_timestamp - now;
+                            
+                            if wait_seconds > 0 {
+                                let minutes = wait_seconds / 60;
+                                let seconds = wait_seconds % 60;
+                                eprintln!("Rate limit resets in {} minutes, {} seconds.", minutes, seconds);
+                                eprintln!("Go make a cuppa, I suppose.");
+                            } else {
+                                eprintln!("Rate limit should've reset by now. Try again.");
+                            }
+                        }
+                    }
+                }
+                
+                eprintln!("\nAlternatively, authenticate with a GitHub token for higher limits:");
+                eprintln!("  export GITHUB_TOKEN=your_token_here");
+                eprintln!("  (Then I'll use it automatically. Not implemented yet, mind you.)");
+                return;
+            }
+            
+            if status.is_success() {
                 let search_result: Result<GitHubSearchResponse, _> = resp.json();
                 match search_result {
                     Ok(result) => {
@@ -616,7 +650,7 @@ fn search_repos(query: &str) {
                     Err(e) => eprintln!("Failed to parse GitHub's response: {}. Typical.", e),
                 }
             } else {
-                eprintln!("GitHub API returned status {}. Lovely.", resp.status());
+                eprintln!("GitHub API returned status {}. Lovely.", status);
             }
         }
         Err(e) => {
