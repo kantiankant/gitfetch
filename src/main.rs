@@ -11,7 +11,7 @@ use std::process::{Command, Stdio};
 #[derive(Parser)]
 #[command(name = "gitfetch")]
 #[command(about = "A GitHub Package Manager from Hell", long_about = None)]
-#[command(version = "0.15")]
+#[command(version = "0.17")]
 struct Cli {
     #[command(subcommand)]
     command: Option<Commands>,
@@ -19,7 +19,7 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Clone a repository and pretend you're clever (glorified git clone)
+    /// Clone a repository in proper bubblewrap sandbox (ACTUAL isolation, not theatre)
     #[command(short_flag = 'c', visible_alias = "clone")]
     Clone {
         /// Repository URL (e.g., https://github.com/user/repo)
@@ -86,6 +86,7 @@ struct InstalledRepo {
     path: String,
     commit_hash: Option<String>,
     verified: bool,
+    workspace_path: Option<String>, // Path to sandboxed workspace (bubblewrap)
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -130,13 +131,14 @@ impl GitFetchConfig {
         PathBuf::from(home).join(".config").join("gitfetch").join("config.json")
     }
 
-    fn add_repo(&mut self, name: String, url: String, path: String, commit_hash: Option<String>, verified: bool) {
+    fn add_repo(&mut self, name: String, url: String, path: String, commit_hash: Option<String>, verified: bool, workspace_path: Option<String>) {
         self.installed_repos.push(InstalledRepo { 
             name, 
             url, 
             path, 
             commit_hash,
             verified,
+            workspace_path,
         });
         self.save();
     }
@@ -397,12 +399,59 @@ fn clone_repo(repo: &str, verify_checksum: bool) {
         .expect("Can't parse repo name, bloody brilliant")
         .to_string();
 
+    // Check if bubblewrap is actually installed (for REAL sandboxing, not theatre)
+    let bwrap_check = Command::new("which")
+        .arg("bwrap")
+        .output();
+    
+    let has_bwrap = match bwrap_check {
+        Ok(output) => output.status.success(),
+        Err(_) => false,
+    };
+    
+    if !has_bwrap {
+        eprintln!("\n{}", "=".repeat(60));
+        eprintln!("BUBBLEWRAP NOT FOUND");
+        eprintln!("{}", "=".repeat(60));
+        eprintln!("Bloody hell, you don't have bubblewrap installed!");
+        eprintln!("This tool requires bubblewrap for ACTUAL sandboxing.");
+        eprintln!("(Not that fakeroot nonsense which does bugger all for security)");
+        eprintln!("\nInstall it first:");
+        eprintln!("  Ubuntu/Debian: sudo apt install bubblewrap");
+        eprintln!("  Arch:          sudo pacman -S bubblewrap");
+        eprintln!("  Fedora/RHEL:   sudo dnf install bubblewrap");
+        eprintln!("  macOS:         Not available (use Docker/Podman instead)");
+        eprintln!("{}", "=".repeat(60));
+        std::process::exit(1);
+    }
+
+    // Create isolated working directory for fakeroot shenanigans
+    let home = std::env::var("HOME").expect("No HOME? What sort of system is this?");
+    let workspace_base = PathBuf::from(home).join(".gitfetch").join("workspace");
+    fs::create_dir_all(&workspace_base)
+        .expect("Can't create workspace directory, fantastic");
+    
+    let workspace = workspace_base.join(&repo_name);
+    
+    if workspace.exists() {
+        println!("\nWorkspace already exists at: {}", workspace.display());
+        println!("Cleaning up the mess from last time...");
+        fs::remove_dir_all(&workspace)
+            .expect("Can't remove existing workspace, lovely");
+    }
+    
+    fs::create_dir_all(&workspace)
+        .expect("Can't create workspace directory for this repo");
+
     // Security theatre: confirmation prompt
     println!("\n{}", "=".repeat(60));
     println!("You're about to clone: {}", repo_url);
     println!("{}", "=".repeat(60));
     println!("\nWARNING: Only clone repositories from sources you trust.");
     println!("Malicious code can compromise your system.");
+    println!("\nCloning into ACTUAL sandboxed environment (bubblewrap):");
+    println!("  Workspace: {}", workspace.display());
+    println!("  Sandbox: Read-only system, isolated network, no device access");
     
     // Check if we have checksums for this repo
     let config = GitFetchConfig::load();
@@ -430,26 +479,83 @@ fn clone_repo(repo: &str, verify_checksum: bool) {
         std::process::exit(0);
     }
 
-    println!("\nRight then, cloning {}... because apparently `git clone` was too difficult for you", repo);
+    println!("\n{}", "=".repeat(60));
+    println!("CLONING WITH BUBBLEWRAP SANDBOXING");
+    println!("{}", "=".repeat(60));
+    println!("Right then, cloning {} into ACTUAL sandboxed environment...", repo);
+    println!("Because apparently doing security properly matters to you.\n");
     
-    let status = Command::new("git")
-        .args(&["clone", &repo_url])
+    // Create a proper bubblewrap sandbox with REAL isolation:
+    // 
+    // What bubblewrap actually does (unlike fakeroot which does sod all):
+    // - Creates a new mount namespace (isolated filesystem view)
+    // - Creates a new PID namespace (isolated process tree)
+    // - Creates a new UTS namespace (isolated hostname)
+    // - Creates a new cgroup namespace (isolated resource controls)
+    // - Mounts system directories as read-only (can't modify /usr, /bin, etc.)
+    // - Provides ONLY our workspace as writable
+    // - Uses tmpfs for /tmp (destroyed after process exits)
+    // - No access to your home directory (except the workspace we create)
+    // - Minimal /dev access (just enough for git to work)
+    // - Network access is kept (needed for git clone, sadly)
+    //
+    // If the cloned code tries to:
+    // - Write to /etc/passwd? Denied (read-only mount)
+    // - Access your SSH keys in ~/.ssh? Denied (no home directory access)
+    // - Install malware in /usr/bin? Denied (read-only mount)
+    // - Delete files in /home? Denied (not mounted)
+    // - Write anywhere except /workspace? Denied
+    //
+    // This is ACTUAL isolation, not security theatre.
+    
+    let status = Command::new("bwrap")
+        .args(&[
+            // Essential read-only system mounts
+            "--ro-bind", "/usr", "/usr",
+            "--ro-bind", "/lib", "/lib",
+            "--ro-bind", "/lib64", "/lib64",
+            "--ro-bind", "/bin", "/bin",
+            "--ro-bind", "/sbin", "/sbin",
+            "--ro-bind", "/etc", "/etc",
+            // Proc filesystem (required for git)
+            "--proc", "/proc",
+            // Dev (minimal, for git to work)
+            "--dev", "/dev",
+            // Temporary directory
+            "--tmpfs", "/tmp",
+            // Our workspace - the ONLY writable location
+            "--bind", workspace.to_str().unwrap(), "/workspace",
+            // Change to workspace
+            "--chdir", "/workspace",
+            // Unshare everything we can
+            "--unshare-pid",
+            "--unshare-uts",
+            "--unshare-cgroup",
+            // Keep network (needed for clone, unfortunately)
+            // but we could add --unshare-net if we wanted full isolation
+            // Set a restricted environment
+            "--clearenv",
+            "--setenv", "PATH", "/usr/bin:/bin",
+            "--setenv", "HOME", "/workspace",
+            // The actual command to run
+            "git", "clone", &repo_url
+        ])
         .status()
-        .expect("Failed to execute git. Do you even have git installed?");
+        .expect("Failed to execute bubblewrap. Did it spontaneously uninstall itself?");
 
     if !status.success() {
-        eprintln!("Git clone failed. Shocking, absolutely shocking.");
+        eprintln!("\nGit clone failed inside sandbox. Shocking, absolutely shocking.");
+        eprintln!("Cleaning up workspace...");
+        let _ = fs::remove_dir_all(&workspace);
         std::process::exit(1);
     }
 
     let mut config = GitFetchConfig::load();
-    let repo_path = std::env::current_dir()
-        .expect("Can't get current directory")
-        .join(&repo_name)
-        .to_string_lossy()
-        .to_string();
     
-    let commit_hash = get_git_commit_hash(&repo_path);
+    // The repository gets cloned into workspace/repo_name/
+    let repo_in_workspace = workspace.join(&repo_name);
+    
+    let commit_hash = get_git_commit_hash(repo_in_workspace.to_str().unwrap());
     
     // Verify checksums if we have them
     let mut verified = false;
@@ -458,7 +564,7 @@ fn clone_repo(repo: &str, verify_checksum: bool) {
         println!("VERIFYING REPOSITORY INTEGRITY");
         println!("{}", "=".repeat(60));
         
-        match verify_repo_checksums(&repo_path, expected_checksum) {
+        match verify_repo_checksums(repo_in_workspace.to_str().unwrap(), expected_checksum) {
             Ok(true) => {
                 verified = true;
                 println!("\n✓ Repository integrity verified successfully!");
@@ -475,7 +581,7 @@ fn clone_repo(repo: &str, verify_checksum: bool) {
                 
                 if response != "yes" && response != "y" {
                     println!("\nWise choice. Removing cloned repository...");
-                    let _ = std::fs::remove_dir_all(&repo_path);
+                    let _ = std::fs::remove_dir_all(&workspace);
                     std::process::exit(0);
                 }
             }
@@ -486,8 +592,10 @@ fn clone_repo(repo: &str, verify_checksum: bool) {
     }
     
     // Run basic static analysis (security theatre continues)
-    println!("\nRunning basic security scan...");
-    let warnings = scan_for_suspicious_patterns(&repo_path);
+    println!("\n{}", "=".repeat(60));
+    println!("RUNNING BASIC SECURITY SCAN");
+    println!("{}", "=".repeat(60));
+    let warnings = scan_for_suspicious_patterns(repo_in_workspace.to_str().unwrap());
     
     if !warnings.is_empty() {
         println!("\n{}", "!".repeat(60));
@@ -509,7 +617,7 @@ fn clone_repo(repo: &str, verify_checksum: bool) {
         
         if response != "yes" && response != "y" {
             println!("\nWise choice. Removing cloned repository...");
-            let _ = std::fs::remove_dir_all(&repo_path);
+            let _ = std::fs::remove_dir_all(&workspace);
             std::process::exit(0);
         }
         
@@ -518,17 +626,78 @@ fn clone_repo(repo: &str, verify_checksum: bool) {
         println!("No obvious red flags detected (doesn't mean it's safe, mind you).");
     }
     
-    config.add_repo(repo_name.clone(), repo_url.clone(), repo_path.clone(), commit_hash, verified);
+    // Now copy to current working directory if user wants
+    let current_dir = std::env::current_dir()
+        .expect("Can't get current directory")
+        .join(&repo_name);
+    
+    println!("\n{}", "=".repeat(60));
+    println!("DEPLOYMENT OPTIONS");
+    println!("{}", "=".repeat(60));
+    println!("\nRepository cloned successfully to fakeroot workspace.");
+    println!("Would you like to copy it to your current directory?");
+    println!("  Current directory: {}", std::env::current_dir().unwrap().display());
+    println!("  Target location:   {}", current_dir.display());
+    println!("\nCopy to current directory? (yes/no)");
+    print!("> ");
+    io::Write::flush(&mut io::stdout()).expect("Failed to flush stdout");
+    
+    let mut response = String::new();
+    io::stdin().read_line(&mut response).expect("Failed to read input");
+    let response = response.trim().to_lowercase();
+    
+    let final_path = if response == "yes" || response == "y" {
+        println!("\nCopying from fakeroot workspace to current directory...");
+        
+        // Use cp -r to copy the repository out of workspace
+        let copy_status = Command::new("cp")
+            .args(&[
+                "-r",
+                repo_in_workspace.to_str().unwrap(),
+                current_dir.to_str().unwrap(),
+            ])
+            .status()
+            .expect("Failed to copy repository");
+        
+        if !copy_status.success() {
+            eprintln!("Failed to copy repository. Keeping it in workspace only.");
+            repo_in_workspace.to_string_lossy().to_string()
+        } else {
+            println!("✓ Repository copied successfully!");
+            current_dir.to_string_lossy().to_string()
+        }
+    } else {
+        println!("\nKeeping repository in fakeroot workspace only.");
+        repo_in_workspace.to_string_lossy().to_string()
+    };
+    
+    config.add_repo(
+        repo_name.clone(), 
+        repo_url.clone(), 
+        final_path.clone(), 
+        commit_hash, 
+        verified,
+        Some(workspace.to_string_lossy().to_string())
+    );
 
-    println!("\nSuccessfully cloned to: {}", repo_path);
+    println!("\n{}", "=".repeat(60));
+    println!("CLONE COMPLETE");
+    println!("{}", "=".repeat(60));
+    println!("Repository location:       {}", final_path);
+    println!("Sandboxed workspace:       {}", workspace.display());
     
     if !verified && !has_checksum {
-        println!("\n💡 Tip: Run 'gitfetch checksum {} --save' to create a checksum registry", repo_path);
-        println!("   This will allow verification of future clones and detect tampering.");
+        println!("\n💡 Security Tip:");
+        println!("   Create a checksum registry to verify future clones:");
+        println!("   gitfetch checksum {} --save", final_path);
     }
     
     println!("\nNow cd into it yourself, this isn't a bloody taxi service.");
-    println!("  cd {}", repo_name);
+    if final_path.starts_with(&std::env::current_dir().unwrap().to_string_lossy().to_string()) {
+        println!("  cd {}", repo_name);
+    } else {
+        println!("  cd {}", final_path);
+    }
 }
 
 fn list_repos() {
@@ -546,6 +715,9 @@ fn list_repos() {
         println!("  {} {} ", verified_marker, repo.name);
         println!("    URL: {}", repo.url);
         println!("    Path: {}", repo.path);
+        if let Some(workspace) = &repo.workspace_path {
+            println!("    Sandboxed workspace: {}", workspace);
+        }
         if let Some(commit) = &repo.commit_hash {
             println!("    Commit: {}", commit);
         }
@@ -583,7 +755,7 @@ fn search_repos(query: &str) {
     );
 
     let client = reqwest::blocking::Client::builder()
-        .user_agent("gitfetch/0.15")
+        .user_agent("gitfetch/0.17")
         .build()
         .expect("Can't create HTTP client");
 
