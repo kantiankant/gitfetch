@@ -18,7 +18,7 @@ First, use git clone https://github.com/kantiankant/gitfetch.git to clone the re
 
 * Support for sh
 * General security improvements for gitfetch (This never ends)
-*  An update script so you don't have to pull and run the install script manually
+*  An update script so you don't have to pull and run the install script manually ✓
 
 1.4: How to update gitfetch
 
