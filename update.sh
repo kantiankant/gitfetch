@@ -34,7 +34,7 @@ CURRENT_VERSION=$(gitfetch --version 2>/dev/null || echo "unknown")
 echo -e "Current version: ${BLUE}${CURRENT_VERSION}${NC}"
 echo
 
-# Stash any local changes (because you've probably been mucking about)
+# Stash any local changes
 if ! git diff-index --quiet HEAD --; then
   echo -e "${YELLOW}Local changes detected. Stashing them...${NC}"
   git stash push -m "gitfetch-update-$(date +%s)"

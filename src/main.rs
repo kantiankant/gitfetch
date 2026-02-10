@@ -583,7 +583,7 @@ fn search_repos(query: &str) {
     );
 
     let client = reqwest::blocking::Client::builder()
-        .user_agent("gitfetch/0.10 (insufferable-prick-edition)")
+        .user_agent("gitfetch/0.13 (insufferable-prick-edition)")
         .build()
         .expect("Can't create HTTP client");
 
