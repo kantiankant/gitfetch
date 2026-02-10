@@ -11,10 +11,10 @@ use std::process::{Command, Stdio};
 #[derive(Parser)]
 #[command(name = "gitfetch")]
 #[command(about = "A GitHub Package Manager from Hell", long_about = None)]
-#[command(version = "0.10")]
+#[command(version = "0.13")]
 struct Cli {
     #[command(subcommand)]
-    command: Commands,
+    command: Option<Commands>,
 }
 
 #[derive(Subcommand)]
@@ -163,6 +163,22 @@ struct GitHubRepo {
 #[derive(Deserialize, Debug)]
 struct GitHubSearchResponse {
     items: Vec<GitHubRepo>,
+}
+
+fn display_banner() {
+    println!(r#"
+ ██████╗ ██╗████████╗███████╗███████╗████████╗ ██████╗██╗  ██╗
+██╔════╝ ██║╚══██╔══╝██╔════╝██╔════╝╚══██╔══╝██╔════╝██║  ██║
+██║  ███╗██║   ██║   █████╗  █████╗     ██║   ██║     ███████║
+██║   ██║██║   ██║   ██╔══╝  ██╔══╝     ██║   ██║     ██╔══██║
+╚██████╔╝██║   ██║   ██║     ███████╗   ██║   ╚██████╗██║  ██║
+ ╚═════╝ ╚═╝   ╚═╝   ╚═╝     ╚══════╝   ╚═╝    ╚═════╝╚═╝  ╚═╝
+"#);
+    
+    // Get the help output from clap
+    let mut cmd = Cli::command();
+    let _ = cmd.print_help();
+    println!();
 }
 
 fn get_git_commit_hash(repo_path: &str) -> Option<String> {
@@ -884,13 +900,14 @@ fn main() {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::Clone { repo, verify_checksum } => clone_repo(&repo, verify_checksum),
-        Commands::List => list_repos(),
-        Commands::Search { query } => search_repos(&query),
-        Commands::EasterEgg => easter_egg(),
-        Commands::Completions { shell } => generate_completions(shell),
-        Commands::Complete { completion_type, partial } => complete_suggestions(&completion_type, &partial),
-        Commands::Checksum { path, save } => checksum_command(&path, save),
-        Commands::Verify { path } => verify_command(&path),
+        None => display_banner(),
+        Some(Commands::Clone { repo, verify_checksum }) => clone_repo(&repo, verify_checksum),
+        Some(Commands::List) => list_repos(),
+        Some(Commands::Search { query }) => search_repos(&query),
+        Some(Commands::EasterEgg) => easter_egg(),
+        Some(Commands::Completions { shell }) => generate_completions(shell),
+        Some(Commands::Complete { completion_type, partial }) => complete_suggestions(&completion_type, &partial),
+        Some(Commands::Checksum { path, save }) => checksum_command(&path, save),
+        Some(Commands::Verify { path }) => verify_command(&path),
     }
 }

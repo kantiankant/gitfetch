@@ -17,7 +17,11 @@ First, use git clone https://github.com/kantiankant/gitfetch.git to clone the re
 1.3: Roadmap/To-Add
 
 * Support for sh
-* General security improvements for gitfetch ✅
+* General security improvements for gitfetch (This never ends)
+*  An update script so you don't have to pull and run the install script manually
 
+1.4: How to update gitfetch
+
+Simply run the given update script (./update.sh) and you should be done
 
 This was inspired by a friend's project, go check his stuff out at: NyAncQt/ghpm
