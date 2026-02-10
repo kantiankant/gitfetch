@@ -11,7 +11,7 @@ use std::process::{Command, Stdio};
 #[derive(Parser)]
 #[command(name = "gitfetch")]
 #[command(about = "A GitHub Package Manager from Hell", long_about = None)]
-#[command(version = "0.13")]
+#[command(version = "0.14")]
 struct Cli {
     #[command(subcommand)]
     command: Option<Commands>,
@@ -583,7 +583,7 @@ fn search_repos(query: &str) {
     );
 
     let client = reqwest::blocking::Client::builder()
-        .user_agent("gitfetch/0.13 (insufferable-prick-edition)")
+        .user_agent("gitfetch/0.14 (insufferable-prick-edition)")
         .build()
         .expect("Can't create HTTP client");
 
