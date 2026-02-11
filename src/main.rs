@@ -12,6 +12,11 @@ use std::process::{Command, Stdio};
 #[command(name = "gitfetch")]
 #[command(about = "A GitHub Package Manager from Hell", long_about = None)]
 #[command(version = "0.18")]
+#[command(after_help = "TRUST MODES (for clone command):\n  \
+    paranoid  - Maximum security: verify everything, prompt for all decisions, isolate network\n  \
+    normal    - Default: balanced security with reasonable prompts and standard checks\n  \
+    yolo      - Minimal security: trust the source, minimal prompts (use with caution)\n\n\
+    Usage: gitfetch clone <repo> --trust-mode <mode>")]
 struct Cli {
     #[command(subcommand)]
     command: Option<Commands>,
@@ -29,7 +34,26 @@ enum Commands {
         #[arg(long, short = 'v')]
         verify_checksum: bool,
         /// Trust mode: paranoid (max security), normal (default), yolo (minimal prompts)
-        #[arg(long, default_value = "normal", value_parser = ["paranoid", "normal", "yolo"])]
+        ///
+        /// Available trust modes:
+        ///   paranoid - Maximum security checks, verify everything, prompt for all decisions
+        ///   normal   - Balanced approach (default), standard security with reasonable prompts
+        ///   yolo     - Minimal prompts, trust the process, live dangerously
+        ///
+        /// Example usage:
+        ///   gitfetch clone https://github.com/user/repo --trust-mode paranoid
+        ///   gitfetch clone https://github.com/user/repo --trust-mode yolo
+        #[arg(long, default_value = "normal", value_parser = ["paranoid", "normal", "yolo"], 
+              long_help = "Set the trust level for cloning operations.\n\n\
+                          PARANOID: Maximum security. Verifies checksums, prompts for every decision,\n\
+                          disables all git hooks, isolates network access. Use when cloning untrusted repos.\n\n\
+                          NORMAL: Default mode. Balanced security with standard checks and reasonable prompts.\n\
+                          Disables hooks and provides basic isolation.\n\n\
+                          YOLO: Minimal security checks and prompts. Trusts the repository source.\n\
+                          Only use with repositories you absolutely trust.\n\n\
+                          Examples:\n  \
+                          gitfetch clone https://github.com/user/repo --trust-mode paranoid\n  \
+                          gitfetch clone https://github.com/user/repo --trust-mode yolo")]
         trust_mode: String,
     },
     /// List all the repos you've installed with this nonsense
