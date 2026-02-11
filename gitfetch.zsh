@@ -1,6 +1,6 @@
 #compdef gitfetch
-# Zsh completion for gitfetch
-# Because zsh users are special and need their own custom script
+# Zsh completion for gitfetch v0.18
+# Because zsh users are special and deserve special treatment
 
 _gitfetch() {
     local line state
@@ -12,7 +12,7 @@ _gitfetch() {
     case $state in
         command)
             _values 'gitfetch command' \
-                'clone[Clone a repository (glorified git clone)]' \
+                'clone[Clone a repository with ACTUAL security]' \
                 '-c[Clone a repository (short form)]' \
                 'list[List installed repos]' \
                 '-l[List installed repos (short form)]' \
@@ -32,19 +32,23 @@ _gitfetch() {
         args)
             case $line[1] in
                 clone|-c)
-                    # Dynamic completion for clone - suggest from history
-                    local suggestions
-                    suggestions=(${(f)"$(gitfetch complete clone-targets ${words[-1]} 2>/dev/null)"})
-                    if [ ${#suggestions[@]} -gt 0 ]; then
-                        _describe 'repository' suggestions
-                    else
-                        # Fallback to allowing any input
-                        _message 'repository URL or user/repo'
-                    fi
-                    # Also suggest flags
                     _arguments \
-                        '--verify-checksum[Verify against known checksums]' \
-                        '-v[Verify against known checksums]'
+                        '1:repository:->repos' \
+                        '(--verify-checksum -v)'{--verify-checksum,-v}'[Verify against known checksums]' \
+                        '--trust-mode=[Trust mode]:mode:(paranoid normal yolo)'
+                    
+                    case $state in
+                        repos)
+                            # Dynamic completion for clone - suggest from history
+                            local suggestions
+                            suggestions=(${(f)"$(gitfetch complete clone-targets ${words[-1]} 2>/dev/null)"})
+                            if [ ${#suggestions[@]} -gt 0 ]; then
+                                _describe 'repository' suggestions
+                            else
+                                _message 'repository URL or user/repo'
+                            fi
+                            ;;
+                    esac
                     ;;
                 search|-s)
                     _message 'repository name to search'

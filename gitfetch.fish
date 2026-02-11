@@ -1,52 +1,40 @@
-# Fish completion for gitfetch
-# Fish just HAD to have its own special syntax, didn't it?
+# Fish completion for gitfetch v0.18
+# For those who prefer their shells friendly
 
-# Helper function to check if we're at a specific position
-function __gitfetch_using_command
-    set -l cmd (commandline -opc)
-    test (count $cmd) -gt 1 -a "$cmd[2]" = "$argv[1]"
-end
-
-# Don't suggest files by default
+# Disable file completion by default
 complete -c gitfetch -f
 
 # Main commands
-complete -c gitfetch -n "not __fish_seen_subcommand_from clone -c list -l search -s easter-egg -e completions checksum verify help" -a clone -d "Clone a repository"
-complete -c gitfetch -n "not __fish_seen_subcommand_from clone -c list -l search -s easter-egg -e completions checksum verify help" -a -c -d "Clone a repository (short)"
-complete -c gitfetch -n "not __fish_seen_subcommand_from clone -c list -l search -s easter-egg -e completions checksum verify help" -a list -d "List installed repos"
-complete -c gitfetch -n "not __fish_seen_subcommand_from clone -c list -l search -s easter-egg -e completions checksum verify help" -a -l -d "List installed repos (short)"
-complete -c gitfetch -n "not __fish_seen_subcommand_from clone -c list -l search -s easter-egg -e completions checksum verify help" -a search -d "Search for repositories"
-complete -c gitfetch -n "not __fish_seen_subcommand_from clone -c list -l search -s easter-egg -e completions checksum verify help" -a -s -d "Search for repositories (short)"
-complete -c gitfetch -n "not __fish_seen_subcommand_from clone -c list -l search -s easter-egg -e completions checksum verify help" -a easter-egg -d "Something pointless"
-complete -c gitfetch -n "not __fish_seen_subcommand_from clone -c list -l search -s easter-egg -e completions checksum verify help" -a -e -d "Easter egg (short)"
-complete -c gitfetch -n "not __fish_seen_subcommand_from clone -c list -l search -s easter-egg -e completions checksum verify help" -a completions -d "Generate shell completions"
-complete -c gitfetch -n "not __fish_seen_subcommand_from clone -c list -l search -s easter-egg -e completions checksum verify help" -a checksum -d "Calculate repository checksums"
-complete -c gitfetch -n "not __fish_seen_subcommand_from clone -c list -l search -s easter-egg -e completions checksum verify help" -a verify -d "Verify repository integrity"
-complete -c gitfetch -n "not __fish_seen_subcommand_from clone -c list -l search -s easter-egg -e completions checksum verify help" -a help -d "Print help message"
+complete -c gitfetch -n __fish_use_subcommand -s c -l clone -d "Clone a repository with ACTUAL security"
+complete -c gitfetch -n __fish_use_subcommand -a clone -d "Clone a repository with ACTUAL security"
+complete -c gitfetch -n __fish_use_subcommand -s l -l list -d "List installed repos"
+complete -c gitfetch -n __fish_use_subcommand -a list -d "List installed repos"
+complete -c gitfetch -n __fish_use_subcommand -s s -l search -d "Search for repositories"
+complete -c gitfetch -n __fish_use_subcommand -a search -d "Search for repositories"
+complete -c gitfetch -n __fish_use_subcommand -s e -l easter-egg -d "Print something utterly pointless"
+complete -c gitfetch -n __fish_use_subcommand -a easter-egg -d "Print something utterly pointless"
+complete -c gitfetch -n __fish_use_subcommand -a completions -d "Generate shell completion scripts"
+complete -c gitfetch -n __fish_use_subcommand -a checksum -d "Calculate checksums for a repository"
+complete -c gitfetch -n __fish_use_subcommand -a verify -d "Verify repository integrity"
+complete -c gitfetch -n __fish_use_subcommand -a help -d "Print help message"
+complete -c gitfetch -n __fish_use_subcommand -s h -l help -d "Show help"
+complete -c gitfetch -n __fish_use_subcommand -s V -l version -d "Show version"
 
-# Help and version (available always)
-complete -c gitfetch -s h -l help -d "Show help"
-complete -c gitfetch -s V -l version -d "Show version"
+# Clone command options
+complete -c gitfetch -n "__fish_seen_subcommand_from clone -c" -s v -l verify-checksum -d "Verify against known checksums"
+complete -c gitfetch -n "__fish_seen_subcommand_from clone -c" -l trust-mode -d "Trust mode" -x -a "paranoid normal yolo"
 
-# Clone command - suggest from history and flags
-complete -c gitfetch -n "__fish_seen_subcommand_from clone -c" -a "(gitfetch complete clone-targets (commandline -ct) 2>/dev/null)" -d Repository
-complete -c gitfetch -n "__fish_seen_subcommand_from clone -c" -l verify-checksum -d "Verify against known checksums"
-complete -c gitfetch -n "__fish_seen_subcommand_from clone -c" -s v -d "Verify against known checksums"
+# Clone repository suggestions (dynamic)
+complete -c gitfetch -n "__fish_seen_subcommand_from clone -c; and not __fish_seen_subcommand_from --verify-checksum -v --trust-mode" -a "(gitfetch complete clone-targets (commandline -ct) 2>/dev/null)"
 
-# Search command - free form input
-complete -c gitfetch -n "__fish_seen_subcommand_from search -s" -d "Repository name"
-
-# Checksum command - suggest directories and flags
+# Checksum command options
+complete -c gitfetch -n "__fish_seen_subcommand_from checksum" -s s -l save -d "Save checksum to registry"
 complete -c gitfetch -n "__fish_seen_subcommand_from checksum" -F -d "Repository path"
-complete -c gitfetch -n "__fish_seen_subcommand_from checksum" -l save -d "Save checksum to registry"
-complete -c gitfetch -n "__fish_seen_subcommand_from checksum" -s s -d "Save checksum to registry"
 
-# Verify command - suggest directories
+# Verify command
 complete -c gitfetch -n "__fish_seen_subcommand_from verify" -F -d "Repository path"
 
-# Completions command - suggest shells
-complete -c gitfetch -n "__fish_seen_subcommand_from completions" -a bash -d "Bash shell"
-complete -c gitfetch -n "__fish_seen_subcommand_from completions" -a zsh -d "Zsh shell"
-complete -c gitfetch -n "__fish_seen_subcommand_from completions" -a fish -d "Fish shell"
-complete -c gitfetch -n "__fish_seen_subcommand_from completions" -a powershell -d PowerShell
-complete -c gitfetch -n "__fish_seen_subcommand_from completions" -a elvish -d "Elvish shell"
+# Completions command - shell types
+complete -c gitfetch -n "__fish_seen_subcommand_from completions" -a "bash zsh fish powershell elvish" -d "Shell type"
+
+# Search command - no specific completions, allow any input

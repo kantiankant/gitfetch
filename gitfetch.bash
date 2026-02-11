@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Bash completion for gitfetch
-# This is the proper way to do completions, unlike those rc-injecting monstrosities
+# Bash completion for gitfetch v0.18
+# Now with 100% more trust issues
 
 _gitfetch_completions() {
   local cur prev words cword
@@ -8,9 +8,6 @@ _gitfetch_completions() {
 
   # The command being completed
   local cmd="${words[1]}"
-
-  # Common options across all commands
-  local common_opts="-h --help -V --version"
 
   # If we're still at the command level
   if [ "$cword" -eq 1 ]; then
@@ -22,36 +19,42 @@ _gitfetch_completions() {
   # Handle completions based on the subcommand
   case "$cmd" in
   clone | -c)
-    # For clone, suggest repos from history and allow any input
-    if [ "$cword" -eq 2 ]; then
-      # Get suggestions from gitfetch itself
-      local suggestions=$(gitfetch complete clone-targets "$cur" 2>/dev/null)
-      COMPREPLY=($(compgen -W "$suggestions" -- "$cur"))
-      # Also allow filesystem completion as fallback
-      if [ ${#COMPREPLY[@]} -eq 0 ]; then
-        _filedir
-      fi
-    elif [ "$cword" -eq 3 ]; then
-      # Flags for clone command
-      local flags="--verify-checksum -v"
+    # CRITICAL: Check if previous word is --trust-mode FIRST
+    if [[ "$prev" == "--trust-mode" ]]; then
+      # Complete trust mode values
+      local modes="paranoid normal yolo"
+      COMPREPLY=($(compgen -W "$modes" -- "$cur"))
+      return 0
+    fi
+
+    # Check if we're completing a flag
+    if [[ "$cur" == -* ]]; then
+      local flags="--verify-checksum -v --trust-mode"
       COMPREPLY=($(compgen -W "$flags" -- "$cur"))
+      return 0
+    fi
+
+    # Otherwise, suggest repository names
+    local suggestions=$(gitfetch complete clone-targets "$cur" 2>/dev/null)
+    COMPREPLY=($(compgen -W "$suggestions" -- "$cur"))
+    # Also allow filesystem completion as fallback
+    if [ ${#COMPREPLY[@]} -eq 0 ]; then
+      _filedir
     fi
     ;;
   search | -s)
-    # For search, we can't really autocomplete but allow any input
+    # For search, allow any input
     if [ "$cword" -eq 2 ]; then
-      # Just return empty to allow free-form input
       COMPREPLY=()
     fi
     ;;
   checksum)
-    if [ "$cword" -eq 2 ]; then
-      # Suggest directories (repository paths)
-      _filedir -d
-    elif [ "$cword" -eq 3 ]; then
-      # Suggest --save flag
+    if [[ "$cur" == -* ]]; then
       local flags="--save -s"
       COMPREPLY=($(compgen -W "$flags" -- "$cur"))
+    elif [ "$cword" -eq 2 ]; then
+      # Suggest directories (repository paths)
+      _filedir -d
     fi
     ;;
   verify)
