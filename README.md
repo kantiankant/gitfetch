@@ -1,6 +1,5 @@
-The rewritten README.md
 
-Version: 0.18 Beta
+Version: 0.18.x Beta
 
 1.0: An introduction 
 
