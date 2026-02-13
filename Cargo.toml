@@ -1,8 +1,8 @@
 [package]
 name = "gitfetch"
-version = "0.10.0"
+version = "0.18.0"
 edition = "2021"
-authors = ["Your insufferable self"]
+authors = ["KantianKant"]
 description = "A GitHub Package Manager from Hell (now with actual cryptographic verification)"
 
 [dependencies]
