@@ -13,7 +13,8 @@ use commands::*;
 #[derive(Parser)]
 #[command(name = "gitfetch")]
 #[command(about = "A GitHub Package Manager from Hell", long_about = None)]
-#[command(version = "0.18")]
+#[command(version = env!("CARGO_PKG_VERSION"))]
+
 #[command(after_help = "TRUST MODES (for clone command):\n  \
     paranoid  - Maximum security: verify everything, prompt for all decisions, isolate network\n  \
     normal    - Default: balanced security with reasonable prompts and standard checks\n  \
@@ -99,7 +100,7 @@ fn display_banner() {
 ██║   ██║██║   ██║   ██╔══╝  ██╔══╝     ██║   ██║     ██╔══██║
 ╚██████╔╝██║   ██║   ██║     ███████╗   ██║   ╚██████╗██║  ██║
  ╚═════╝ ╚═╝   ╚═╝   ╚═╝     ╚══════╝   ╚═╝    ╚═════╝╚═╝  ╚═╝
-                                                        v0.18.1
+                                                        v0.18.2
 "#);
     let mut cmd = Cli::command();
     let _ = cmd.print_help();

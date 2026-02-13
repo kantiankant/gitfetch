@@ -12,7 +12,7 @@ pub fn easter_egg() {
         .expect("Failed to run whoami");
 
     let username = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    println!("{} is properly paranoid for using gitfetch v0.18", username);
+    println!("{} is properly paranoid for using gitfetch v0.18.2", username);
 }
 
 pub fn generate_completions(shell: Shell) {

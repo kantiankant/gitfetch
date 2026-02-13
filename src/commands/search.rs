@@ -19,7 +19,16 @@ pub fn search_repos(query: &str) {
 
     match client.get(&url).send() {
         Ok(resp) => {
-            if resp.status().is_success() {
+            let status = resp.status();
+            
+            // Check for rate limiting (403 or 429)
+            if status.as_u16() == 403 || status.as_u16() == 429 {
+                eprintln!("\nSod off, you've been rate limited. Maybe use the GUI sometime?");
+                eprintln!("(GitHub allows 10 unauthenticated requests per minute)");
+                std::process::exit(1);
+            }
+            
+            if status.is_success() {
                 if let Ok(result) = resp.json::<GitHubSearchResponse>() {
                     if result.items.is_empty() {
                         println!("No repositories found.");
@@ -36,7 +45,7 @@ pub fn search_repos(query: &str) {
                     }
                 }
             } else {
-                eprintln!("GitHub API error: {}", resp.status());
+                eprintln!("GitHub API error: {}", status);
             }
         }
         Err(e) => eprintln!("Network error: {}", e),
