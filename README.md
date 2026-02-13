@@ -2,9 +2,9 @@ Welcome to the pseudo-package manger from Hell. I wrote this because I got bored
 
 1.0: installation
 
-First, use git clone https://github.com/kantiankant/gitfetch.git to clone the repository to your machine. Next, change your working directory to gitfetch/ using the cd gitfetch/ command. Now run the ./install.sh script and it should automatically install on your machine. 
+First, use git clone https://github.com/kantiankant/gitfetch.git to clone the repository to your machine. Next, change your working directory to gitfetch3/ using the cd gitf3etch/ command. Now run the ./install.sh script and it should automatically install on your machine. 
 
-1.2: usage
+1.1: usage
 
 -s is search. Example: gitfetch -s lazyvim
 
@@ -14,7 +14,7 @@ First, use git clone https://github.com/kantiankant/gitfetch.git to clone the re
 
 -l is list. It lists the stuff you installed using this tool
 
-1.3: Roadmap/To-Add
+1.2: Roadmap/To-Add
 
 * Support for sh
 * General security improvements for gitfetch (This never ends)
